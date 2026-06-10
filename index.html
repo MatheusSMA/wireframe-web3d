@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Casa 3D Interativa</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+
+    /* Container do widget — ocupa todo o espaço disponível (iframe, div, etc.) */
+    #house3d-root {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      min-height: 320px;
+      background: linear-gradient(160deg, #dbeafe 0%, #eff6ff 45%, #f8fafc 100%);
+      cursor: grab;
+      touch-action: none; /* evita scroll do navegador ao arrastar no mobile */
+      overflow: hidden;
+    }
+    #house3d-root.grabbing { cursor: grabbing; }
+    #house3d-root.pointer  { cursor: pointer; }
+
+    #house3d-root canvas { display: block; }
+
+    /* Dica de uso, some no primeiro toque/clique */
+    .house3d-hint {
+      position: absolute;
+      left: 50%;
+      bottom: 14px;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.72);
+      color: #fff;
+      padding: 7px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      line-height: 1;
+      pointer-events: none;
+      white-space: nowrap;
+      transition: opacity 0.4s ease;
+      user-select: none;
+    }
+    .house3d-hint.hidden { opacity: 0; }
+
+    /* Fallback caso WebGL não esteja disponível */
+    .house3d-fallback {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 24px;
+      color: #334155;
+      font-size: 15px;
+    }
+
+    /* Painel de toggles no canto */
+    .house3d-controls {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 10px 12px;
+      background: rgba(255, 255, 255, 0.82);
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      border-radius: 12px;
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+      font-size: 13px;
+      color: #1e293b;
+      user-select: none;
+      z-index: 2;
+    }
+    .house3d-toggle {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .house3d-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+    .house3d-track {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      border-radius: 999px;
+      background: #cbd5e1;
+      transition: background 0.2s ease;
+      flex: none;
+    }
+    .house3d-track::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+      transition: transform 0.2s ease;
+    }
+    .house3d-toggle input:checked + .house3d-track { background: #2563eb; }
+    .house3d-toggle input:checked + .house3d-track::after { transform: translateX(16px); }
+    .house3d-toggle input:focus-visible + .house3d-track { outline: 2px solid #2563eb; outline-offset: 2px; }
+  </style>
+</head>
+<body>
+  <div id="house3d-root">
+    <div class="house3d-controls" id="house3d-controls">
+      <label class="house3d-toggle">
+        <input type="checkbox" id="toggle-wireframe" />
+        <span class="house3d-track"></span>
+        <span>Wireframe</span>
+      </label>
+      <label class="house3d-toggle">
+        <input type="checkbox" id="toggle-autorotate" />
+        <span class="house3d-track"></span>
+        <span>Girar sozinho</span>
+      </label>
+    </div>
+    <div class="house3d-hint" id="house3d-hint">
+      Arraste para girar · clique na porta e na janela
+    </div>
+  </div>
+
+  <!-- Three.js via CDN (versão fixada) — sem build necessário -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const root = document.getElementById('house3d-root');
+    const hint = document.getElementById('house3d-hint');
+
+    // Detecção simples de WebGL
+    function webglAvailable() {
+      try {
+        const canvas = document.createElement('canvas');
+        return !!(window.WebGLRenderingContext &&
+          (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')));
+      } catch (e) {
+        return false;
+      }
+    }
+
+    if (!webglAvailable()) {
+      const fb = document.createElement('div');
+      fb.className = 'house3d-fallback';
+      fb.textContent = 'Seu navegador não suporta WebGL, necessário para exibir a casa 3D.';
+      root.appendChild(fb);
+      if (hint) hint.remove();
+      throw new Error('WebGL indisponível');
+    }
+
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // ---------- Cena, câmera, renderer ----------
+    const scene = new THREE.Scene();
+
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+    camera.position.set(4.2, 3.2, 5.6);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    root.appendChild(renderer.domElement);
+
+    // ---------- Luzes ----------
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x8d9bb5, 0.95));
+
+    const sun = new THREE.DirectionalLight(0xffffff, 1.15);
+    sun.position.set(5, 8, 5);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 30;
+    sun.shadow.camera.left = -8;
+    sun.shadow.camera.right = 8;
+    sun.shadow.camera.top = 8;
+    sun.shadow.camera.bottom = -8;
+    scene.add(sun);
+
+    // ---------- Grupo raiz da casa (recebe a rotação por drag) ----------
+    const house = new THREE.Group();
+    scene.add(house);
+
+    // Dimensões base
+    const W = 2.6;   // largura (X)
+    const H = 1.7;   // altura  (Y)
+    const D = 2.4;   // profundidade (Z)
+
+    // ---------- Chão (recebe sombra) ----------
+    const floor = new THREE.Mesh(
+      new THREE.CircleGeometry(5, 48),
+      new THREE.MeshStandardMaterial({ color: 0xc7d2cf, roughness: 1 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -H / 2 - 0.001;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    // ---------- Corpo da casa ----------
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xf2e9da, roughness: 0.85 });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), bodyMat);
+    body.castShadow = true;
+    body.receiveShadow = true;
+    house.add(body);
+
+    // ---------- Telhado (pirâmide de 4 águas) ----------
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0xb14b3c, roughness: 0.7 });
+    const roofR = Math.hypot(W, D) / 2 * 0.92; // raio até cobrir o corpo
+    const roofH = 1.15;
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(roofR, roofH, 4), roofMat);
+    roof.rotation.y = Math.PI / 4;             // alinha as 4 águas com as paredes
+    roof.position.y = H / 2 + roofH / 2;
+    roof.castShadow = true;
+    house.add(roof);
+
+    // Face frontal fica em +Z
+    const frontZ = D / 2;
+
+    // ---------- Porta (gira pela dobradiça lateral) ----------
+    const doorW = 0.62, doorH = 1.05, doorT = 0.06;
+    const doorMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2b, roughness: 0.6 });
+
+    // Moldura batente (decorativa, fixa na parede)
+    const doorFrame = new THREE.Mesh(
+      new THREE.BoxGeometry(doorW + 0.12, doorH + 0.08, 0.04),
+      new THREE.MeshStandardMaterial({ color: 0x4d3420, roughness: 0.7 })
+    );
+    doorFrame.position.set(-0.55, -(H / 2) + (doorH + 0.08) / 2, frontZ + 0.005);
+    house.add(doorFrame);
+
+    // Pivô na aresta esquerda da porta
+    const doorPivot = new THREE.Group();
+    doorPivot.position.set(-0.55 - doorW / 2, -(H / 2) + doorH / 2, frontZ + 0.03);
+    house.add(doorPivot);
+
+    const door = new THREE.Mesh(new THREE.BoxGeometry(doorW, doorH, doorT), doorMat);
+    door.position.x = doorW / 2; // borda fica na origem do pivô
+    door.castShadow = true;
+    door.userData.part = 'door';
+    doorPivot.add(door);
+
+    // Maçaneta
+    const knob = new THREE.Mesh(
+      new THREE.SphereGeometry(0.045, 16, 16),
+      new THREE.MeshStandardMaterial({ color: 0xe6c14b, roughness: 0.3, metalness: 0.6 })
+    );
+    knob.position.set(doorW - 0.1, 0, doorT / 2 + 0.02);
+    knob.userData.part = 'door';
+    doorPivot.add(knob);
+
+    // ---------- Janela (folha gira pela dobradiça lateral) ----------
+    const winW = 0.62, winH = 0.62, winT = 0.05;
+    const winX = 0.62, winY = 0.12;
+
+    // Moldura fixa na parede
+    const winFrame = new THREE.Mesh(
+      new THREE.BoxGeometry(winW + 0.12, winH + 0.12, 0.05),
+      new THREE.MeshStandardMaterial({ color: 0x4d3420, roughness: 0.7 })
+    );
+    winFrame.position.set(winX, winY, frontZ + 0.005);
+    house.add(winFrame);
+
+    // Pivô na aresta direita da janela (abre pro outro lado)
+    const winPivot = new THREE.Group();
+    winPivot.position.set(winX + winW / 2, winY, frontZ + 0.04);
+    house.add(winPivot);
+
+    const glassMat = new THREE.MeshStandardMaterial({
+      color: 0x9fd3e3,
+      roughness: 0.1, metalness: 0.1,
+      transparent: true, opacity: 0.55
+    });
+    const winSash = new THREE.Group();        // folha = vidro + travessas
+    winSash.position.x = -winW / 2;           // borda direita na origem do pivô
+    winPivot.add(winSash);
+
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(winW, winH, winT), glassMat);
+    glass.castShadow = true;
+    glass.userData.part = 'window';
+    winSash.add(glass);
+
+    // Travessas em cruz da janela
+    const barMat = new THREE.MeshStandardMaterial({ color: 0xece4d6, roughness: 0.6 });
+    const barV = new THREE.Mesh(new THREE.BoxGeometry(0.05, winH, winT + 0.02), barMat);
+    barV.userData.part = 'window';
+    winSash.add(barV);
+    const barH = new THREE.Mesh(new THREE.BoxGeometry(winW, 0.05, winT + 0.02), barMat);
+    barH.userData.part = 'window';
+    winSash.add(barH);
+
+    // ---------- Estado de abertura ----------
+    const OPEN_DOOR = -Math.PI * 0.62;  // ~ -112°
+    const OPEN_WIN  =  Math.PI * 0.5;   //   90°
+    const state = {
+      door:   { open: false, current: 0, target: 0 },
+      window: { open: false, current: 0, target: 0 }
+    };
+
+    function toggle(part) {
+      const s = state[part];
+      s.open = !s.open;
+      s.target = s.open ? (part === 'door' ? OPEN_DOOR : OPEN_WIN) : 0;
+      if (reduceMotion) {
+        s.current = s.target; // sem animação: salta direto
+        applyOpenAngles();
+      }
+    }
+
+    function applyOpenAngles() {
+      doorPivot.rotation.y = state.door.current;
+      winPivot.rotation.y = state.window.current;
+    }
+
+    // ---------- Enquadramento automático ----------
+    // Esfera que envolve a casa (corpo + telhado). A câmera é posicionada pra
+    // que essa esfera caiba na tela seja qual for a proporção do container.
+    const HOUSE_CENTER = new THREE.Vector3(0, 0.45, 0);
+    const HOUSE_RADIUS = 2.25;
+    const viewDir = new THREE.Vector3(4.2, 3.2, 5.6).normalize(); // ângulo 3/4
+
+    function fitDistance(aspect) {
+      const vFov = THREE.MathUtils.degToRad(camera.fov);
+      const hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect);
+      const limit = Math.min(vFov, hFov);           // dimensão mais "apertada"
+      return (HOUSE_RADIUS / Math.sin(limit / 2)) * 1.12; // 12% de margem
+    }
+
+    // ---------- Controles (drag pra girar) ----------
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.copy(HOUSE_CENTER);
+    controls.enableDamping = !reduceMotion;
+    controls.dampingFactor = 0.08;
+    controls.enablePan = false;
+    controls.minPolarAngle = 0.15;
+    controls.maxPolarAngle = Math.PI / 2 - 0.05; // não passa por baixo do chão
+    controls.update();
+
+    root.addEventListener('pointerdown', () => root.classList.add('grabbing'));
+    window.addEventListener('pointerup', () => root.classList.remove('grabbing'));
+
+    // ---------- Raycaster: clique e hover ----------
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    const clickableParts = [door, knob, glass, barV, barH];
+    const emissiveTargets = [door, glass]; // realce de hover
+    const baseEmissive = new Map();
+    emissiveTargets.forEach((m) => {
+      m.material.emissive = new THREE.Color(0x000000);
+      baseEmissive.set(m, m.material.emissive.clone());
+    });
+
+    function setPointerFromEvent(e) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    }
+
+    function pickPart(e) {
+      setPointerFromEvent(e);
+      raycaster.setFromCamera(pointer, camera);
+      const hits = raycaster.intersectObjects(clickableParts, false);
+      return hits.length ? hits[0].object.userData.part : null;
+    }
+
+    // Detecta clique vs. arraste (não abrir porta ao terminar uma rotação)
+    let downPos = null;
+    renderer.domElement.addEventListener('pointerdown', (e) => {
+      downPos = { x: e.clientX, y: e.clientY };
+    });
+    renderer.domElement.addEventListener('pointerup', (e) => {
+      if (!downPos) return;
+      const moved = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);
+      downPos = null;
+      if (moved > 6) return; // foi arraste, ignora
+      const part = pickPart(e);
+      if (part) {
+        toggle(part);
+        dismissHint();
+      }
+    });
+
+    let hovered = null;
+    renderer.domElement.addEventListener('pointermove', (e) => {
+      const part = pickPart(e);
+      root.classList.toggle('pointer', !!part);
+      if (part !== hovered) {
+        hovered = part;
+        if (!reduceMotion) {
+          emissiveTargets.forEach((m) => {
+            const on = (hovered === m.userData.part);
+            m.material.emissive.setHex(on ? 0x553311 : 0x000000);
+          });
+        }
+      }
+    });
+    renderer.domElement.addEventListener('pointerleave', () => {
+      root.classList.remove('pointer');
+      hovered = null;
+      emissiveTargets.forEach((m) => m.material.emissive.setHex(0x000000));
+    });
+
+    function dismissHint() {
+      if (hint) hint.classList.add('hidden');
+    }
+    root.addEventListener('pointerdown', dismissHint, { once: true });
+
+    // ---------- Toggles do canto ----------
+    // Materiais da casa (sem o chão) — pra alternar o modo wireframe
+    const houseMaterials = new Set();
+    house.traverse((o) => {
+      if (o.isMesh) {
+        (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => houseMaterials.add(m));
+      }
+    });
+
+    const wireframeToggle = document.getElementById('toggle-wireframe');
+    wireframeToggle.addEventListener('change', () => {
+      houseMaterials.forEach((m) => { m.wireframe = wireframeToggle.checked; });
+    });
+
+    const autoRotateToggle = document.getElementById('toggle-autorotate');
+    controls.autoRotate = false;
+    controls.autoRotateSpeed = 1.5;
+    autoRotateToggle.addEventListener('change', () => {
+      controls.autoRotate = autoRotateToggle.checked;
+    });
+
+    // ---------- Resize responsivo ----------
+    function resize() {
+      const w = root.clientWidth || 1;
+      const h = root.clientHeight || 1;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h); // ajusta buffer E o tamanho CSS do canvas ao container
+
+      // Reposiciona a câmera pra casa caber inteira, mantendo o ângulo atual de visão
+      const dist = fitDistance(camera.aspect);
+      const dir = camera.position.clone().sub(controls.target);
+      if (dir.lengthSq() < 1e-6) dir.copy(viewDir); // primeira execução
+      dir.normalize();
+      camera.position.copy(controls.target).addScaledVector(dir, dist);
+      controls.minDistance = dist * 0.6;
+      controls.maxDistance = dist * 1.8;
+      controls.update();
+    }
+    window.addEventListener('resize', resize);
+    if (window.ResizeObserver) new ResizeObserver(resize).observe(root);
+    resize();
+
+    // ---------- Loop de animação ----------
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Interpolação suave (easing) das aberturas
+      const k = 0.12;
+      for (const part of ['door', 'window']) {
+        const s = state[part];
+        if (Math.abs(s.current - s.target) > 0.0005) {
+          s.current += (s.target - s.current) * k;
+        } else {
+          s.current = s.target;
+        }
+      }
+      applyOpenAngles();
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
