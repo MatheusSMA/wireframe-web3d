@@ -13,6 +13,16 @@
     html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
     .a-enter-vr, .a-enter-ar { display: none !important; }
 
+    /* Vídeo da câmera nítido e preenchendo a tela (sem esticar/borrar) */
+    #arjs-video, video {
+      position: fixed !important;
+      top: 0 !important; left: 0 !important;
+      width: 100vw !important; height: 100vh !important;
+      object-fit: cover !important;
+      z-index: -2 !important;
+    }
+    .a-canvas { object-fit: cover; }
+
     /* Dica enquanto não acha o marcador */
     #hint {
       position: fixed; left: 50%; top: 16px; transform: translateX(-50%);
@@ -92,7 +102,7 @@
     embedded
     vr-mode-ui="enabled: false"
     renderer="logarithmicDepthBuffer: true; alpha: true; antialias: true"
-    arjs="sourceType: webcam; detectionMode: mono; matrixCodeType: 3x3; debugUIEnabled: false;">
+    arjs="sourceType: webcam; sourceWidth: 1280; sourceHeight: 960; displayWidth: 1280; displayHeight: 960; detectionMode: mono; debugUIEnabled: false;">
 
     <a-marker preset="hiro" id="marker">
       <!-- Casa (escalada pra caber no marcador) -->
@@ -141,6 +151,21 @@
   </a-scene>
 
   <script>
+    // Garante que o vídeo da câmera preencha a tela de forma nítida (corrige o "zoom/borrão"
+    // do AR.js, que por padrão estica um vídeo pequeno). Reaplica ao carregar e ao girar o aparelho.
+    function fitVideo() {
+      const video = document.getElementById('arjs-video') || document.querySelector('video');
+      if (!video) return;
+      Object.assign(video.style, {
+        position: 'fixed', top: '0', left: '0',
+        width: '100vw', height: '100vh',
+        objectFit: 'cover'
+      });
+    }
+    window.addEventListener('arjs-video-loaded', fitVideo);
+    window.addEventListener('resize', fitVideo);
+    window.addEventListener('orientationchange', () => setTimeout(fitVideo, 300));
+
     const marker = document.getElementById('marker');
     const hint = document.getElementById('hint');
     const house = document.getElementById('house');
