@@ -137,7 +137,9 @@
       </a-entity>
     </a-marker>
 
-    <a-entity camera></a-entity>
+    <a-entity camera>
+      <a-entity cursor="rayOrigin: mouse" raycaster="objects: .clickable"></a-entity>
+    </a-entity>
   </a-scene>
 
   <script>
@@ -153,30 +155,12 @@
 
     // ---- Interação direta: arrastar pra girar a casa, tocar pra abrir porta/janela ----
     const sceneEl = document.querySelector('a-scene');
-    const ray = new THREE.Raycaster();
-    const ndc = new THREE.Vector2();
-
-    function toggleAtPoint(clientX, clientY, canvas) {
-      if (!sceneEl.camera) return;
-      const rect = canvas.getBoundingClientRect();
-      ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-      ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-      ray.setFromCamera(ndc, sceneEl.camera);
-      const hits = ray.intersectObjects([doorPivot.object3D, winPivot.object3D], true);
-      if (!hits.length) return;
-      let o = hits[0].object;
-      while (o) {
-        if (o === doorPivot.object3D) { doorPivot.components.hinge.toggle(); return; }
-        if (o === winPivot.object3D)  { winPivot.components.hinge.toggle();  return; }
-        o = o.parent;
-      }
-    }
 
     // Ignora gestos que começam nos botões da UI
     function isUI(t) { return t && t.closest && t.closest('#controls, #side-controls'); }
 
-    // Eventos na janela (mais confiável que prender no canvas do AR.js):
-    // arrastar = girar a casa; toque curto na porta/janela = abrir/fechar.
+    // Arrastar na tela = girar a casa. (Abrir/fechar ao tocar na peça é tratado
+    // pelo cursor do A-Frame mais abaixo, que mapeia o toque corretamente.)
     let down = false, dragging = false, startX = 0, startY = 0, lastX = 0;
     window.addEventListener('pointerdown', (e) => {
       if (isUI(e.target)) return;
@@ -188,13 +172,15 @@
       if (Math.abs(e.clientX - startX) + Math.abs(e.clientY - startY) > 6) dragging = true;
       if (dragging) house.object3D.rotation.y += dx * 0.01; // girar arrastando
     });
-    window.addEventListener('pointerup', (e) => {
-      if (!down) return; down = false;
-      if (isUI(e.target)) return;
-      const dist = Math.hypot(e.clientX - startX, e.clientY - startY);
-      if (dist < 8 && sceneEl.canvas) toggleAtPoint(e.clientX, e.clientY, sceneEl.canvas);
-    });
+    window.addEventListener('pointerup', () => { down = false; });
     window.addEventListener('pointercancel', () => { down = false; });
+
+    // Tocar direto na porta/janela abre/fecha (cursor do A-Frame faz o raycast certinho).
+    // Ignora se o gesto foi um arraste (giro), pra não abrir sem querer ao terminar de girar.
+    document.querySelectorAll('#doorPivot .clickable').forEach(el =>
+      el.addEventListener('click', () => { if (!dragging) doorPivot.components.hinge.toggle(); }));
+    document.querySelectorAll('#winPivot .clickable').forEach(el =>
+      el.addEventListener('click', () => { if (!dragging) winPivot.components.hinge.toggle(); }));
 
     // Botão "Controles": mostra/esconde as opções laterais Porta e Janela
     const sideControls = document.getElementById('side-controls');
