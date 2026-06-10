@@ -61,6 +61,29 @@
     }
     #side-door { left: 10px; }
     #side-window { right: 10px; }
+
+    /* Popup de conteúdo (responsivo, funciona dentro do iframe) */
+    #info-popup {
+      position: fixed; inset: 0; z-index: 40; display: none;
+      align-items: center; justify-content: center;
+      padding: clamp(14px, 5vw, 28px);
+      background: rgba(15, 23, 42, 0.6);
+    }
+    #info-popup.show { display: flex; }
+    .info-card {
+      background: #fff; color: #0f172a; border-radius: 16px;
+      width: min(420px, 92%); padding: clamp(16px, 4vw, 22px);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35); text-align: center;
+    }
+    .info-img {
+      width: 100%; height: clamp(130px, 28vh, 200px);
+      background: #eef2f7; border-radius: 12px; overflow: hidden;
+      display: flex; align-items: center; justify-content: center; margin-bottom: 14px;
+    }
+    .info-img svg { height: 88%; width: auto; }
+    .info-card h2 { margin: 0 0 8px; font-size: clamp(18px, 5vw, 22px); }
+    .info-card p { margin: 0 0 16px; color: #475569; font-size: clamp(13px, 3.6vw, 15px); line-height: 1.5; }
+    .info-card button { background: #2563eb; color: #fff; border: 0; border-radius: 10px; padding: 11px 22px; font-weight: 700; font-size: 15px; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -76,6 +99,16 @@
   <div id="side-controls">
     <button class="side-btn" id="side-door">🚪<br>Porta</button>
     <button class="side-btn" id="side-window">🪟<br>Janela</button>
+  </div>
+
+  <!-- Popup de conteúdo (abre ao clicar na porta/janela) -->
+  <div id="info-popup">
+    <div class="info-card">
+      <div class="info-img" id="info-img"></div>
+      <h2 id="info-title"></h2>
+      <p id="info-text"></p>
+      <button id="info-close">Fechar</button>
+    </div>
   </div>
 
   <!-- Componente que abre/fecha porta e janela com easing (gira pela dobradiça) -->
@@ -156,8 +189,8 @@
     // ---- Interação direta: arrastar pra girar a casa, tocar pra abrir porta/janela ----
     const sceneEl = document.querySelector('a-scene');
 
-    // Ignora gestos que começam nos botões da UI
-    function isUI(t) { return t && t.closest && t.closest('#controls, #side-controls'); }
+    // Ignora gestos que começam na UI (botões / popup)
+    function isUI(t) { return t && t.closest && t.closest('#controls, #side-controls, #info-popup'); }
 
     // Arrastar na tela = girar a casa. (Abrir/fechar ao tocar na peça é tratado
     // pelo cursor do A-Frame mais abaixo, que mapeia o toque corretamente.)
@@ -175,12 +208,57 @@
     window.addEventListener('pointerup', () => { down = false; });
     window.addEventListener('pointercancel', () => { down = false; });
 
-    // Tocar direto na porta/janela abre/fecha (cursor do A-Frame faz o raycast certinho).
-    // Ignora se o gesto foi um arraste (giro), pra não abrir sem querer ao terminar de girar.
+    // ---- Conteúdo do popup (imagem ilustrativa + texto + som genérico) ----
+    const DOOR_SVG = '<svg viewBox="0 0 120 160" xmlns="http://www.w3.org/2000/svg">' +
+      '<rect x="10" y="6" width="100" height="150" rx="4" fill="#8a5a2b"/>' +
+      '<rect x="20" y="16" width="80" height="60" rx="3" fill="#6b4a2b"/>' +
+      '<rect x="20" y="86" width="80" height="60" rx="3" fill="#6b4a2b"/>' +
+      '<circle cx="92" cy="86" r="4" fill="#e6c14b"/></svg>';
+    const WIN_SVG = '<svg viewBox="0 0 160 160" xmlns="http://www.w3.org/2000/svg">' +
+      '<rect x="8" y="8" width="144" height="144" rx="6" fill="#4d3420"/>' +
+      '<rect x="20" y="20" width="120" height="120" fill="#9fd3e3"/>' +
+      '<rect x="76" y="20" width="8" height="120" fill="#ece4d6"/>' +
+      '<rect x="20" y="76" width="120" height="8" fill="#ece4d6"/></svg>';
+
+    const INFO = {
+      door:   { title: 'A Porta',  svg: DOOR_SVG, freq: 392,
+        text: 'Conteúdo de demonstração: aqui entraria o material da aula sobre a porta — descrição, imagem real, vídeo, etc.' },
+      window: { title: 'A Janela', svg: WIN_SVG,  freq: 587,
+        text: 'Conteúdo de demonstração: aqui entraria o material da aula sobre a janela.' }
+    };
+
+    // Som genérico via Web Audio (sem precisar de arquivo)
+    let audioCtx;
+    function playTone(freq) {
+      try {
+        audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t = audioCtx.currentTime;
+        o.type = 'sine'; o.frequency.value = freq;
+        o.connect(g); g.connect(audioCtx.destination);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.3, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+        o.start(t); o.stop(t + 0.47);
+      } catch (e) {}
+    }
+
+    const infoPopup = document.getElementById('info-popup');
+    function showInfo(key) {
+      const i = INFO[key];
+      document.getElementById('info-img').innerHTML = i.svg;
+      document.getElementById('info-title').textContent = i.title;
+      document.getElementById('info-text').textContent = i.text;
+      infoPopup.classList.add('show');
+      playTone(i.freq);
+    }
+    document.getElementById('info-close').addEventListener('click', () => infoPopup.classList.remove('show'));
+
+    // Tocar direto na porta/janela: anima + abre o popup (cursor do A-Frame faz o raycast).
+    // Ignora se o gesto foi um arraste (giro), pra não disparar sem querer ao terminar de girar.
     document.querySelectorAll('#doorPivot .clickable').forEach(el =>
-      el.addEventListener('click', () => { if (!dragging) doorPivot.components.hinge.toggle(); }));
+      el.addEventListener('click', () => { if (dragging) return; doorPivot.components.hinge.toggle(); showInfo('door'); }));
     document.querySelectorAll('#winPivot .clickable').forEach(el =>
-      el.addEventListener('click', () => { if (!dragging) winPivot.components.hinge.toggle(); }));
+      el.addEventListener('click', () => { if (dragging) return; winPivot.components.hinge.toggle(); showInfo('window'); }));
 
     // Botão "Controles": mostra/esconde as opções laterais Porta e Janela
     const sideControls = document.getElementById('side-controls');
@@ -189,8 +267,8 @@
       const show = sideControls.classList.toggle('show');
       btnActions.classList.toggle('active', show);
     });
-    document.getElementById('side-door').addEventListener('click', () => doorPivot.components.hinge.toggle());
-    document.getElementById('side-window').addEventListener('click', () => winPivot.components.hinge.toggle());
+    document.getElementById('side-door').addEventListener('click', () => { doorPivot.components.hinge.toggle(); showInfo('door'); });
+    document.getElementById('side-window').addEventListener('click', () => { winPivot.components.hinge.toggle(); showInfo('window'); });
 
     // Tela cheia NO LUGAR (mantém o contexto embedded que funciona dentro do iframe).
     // Não abre aba nova — abrir a ar.html solta é justamente o modo que quebra no celular.
