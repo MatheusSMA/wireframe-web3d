@@ -59,12 +59,10 @@
   </style>
 </head>
 <body>
-  <div id="hint">📷 Aponte para o marcador <strong>Hiro</strong> (toque em “Alvo” para vê-lo).</div>
+  <div id="hint">📷 Aponte para o marcador <strong>Hiro</strong> · arraste para girar · toque na porta/janela.</div>
 
   <div id="controls">
-    <button id="btn-door" class="primary">🚪 Porta</button>
-    <button id="btn-window" class="primary">🪟 Janela</button>
-    <button id="btn-wire">🔲 Wire</button>
+    <button id="btn-wire">🔲 Wireframe</button>
     <button id="btn-marker">🎯 Alvo</button>
     <button id="btn-full">⛶ Tela cheia</button>
     <button id="btn-exit" class="exit">✕ Sair</button>
@@ -97,7 +95,8 @@
     renderer="logarithmicDepthBuffer: true; alpha: true; antialias: true"
     arjs="sourceType: webcam; sourceWidth: 1280; sourceHeight: 960; detectionMode: mono; debugUIEnabled: false;">
 
-    <a-marker preset="hiro" id="marker">
+    <a-marker preset="hiro" id="marker"
+              smooth="true" smoothCount="10" smoothTolerance="0.01" smoothThreshold="5">
       <!-- Casa (escalada pra caber no marcador) -->
       <a-entity id="house" scale="0.5 0.5 0.5" position="0 0 0">
 
@@ -135,9 +134,7 @@
       </a-entity>
     </a-marker>
 
-    <a-entity camera>
-      <a-entity cursor="rayOrigin: mouse" raycaster="objects: .clickable"></a-entity>
-    </a-entity>
+    <a-entity camera></a-entity>
   </a-scene>
 
   <script>
@@ -151,15 +148,50 @@
     marker.addEventListener('markerFound', () => hint.classList.add('hidden'));
     marker.addEventListener('markerLost', () => hint.classList.remove('hidden'));
 
-    // Controles porta/janela
-    document.getElementById('btn-door').addEventListener('click', () => doorPivot.components.hinge.toggle());
-    document.getElementById('btn-window').addEventListener('click', () => winPivot.components.hinge.toggle());
+    // ---- Interação direta: arrastar pra girar a casa, tocar pra abrir porta/janela ----
+    const sceneEl = document.querySelector('a-scene');
+    const ray = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
 
-    // Toque direto nas peças também abre/fecha
-    document.querySelectorAll('#doorPivot .clickable').forEach(el =>
-      el.addEventListener('click', () => doorPivot.components.hinge.toggle()));
-    document.querySelectorAll('#winPivot .clickable').forEach(el =>
-      el.addEventListener('click', () => winPivot.components.hinge.toggle()));
+    function toggleAtPoint(clientX, clientY, canvas) {
+      const rect = canvas.getBoundingClientRect();
+      ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+      ray.setFromCamera(ndc, sceneEl.camera);
+      const hits = ray.intersectObjects([doorPivot.object3D, winPivot.object3D], true);
+      if (!hits.length) return;
+      let o = hits[0].object;
+      while (o) {
+        if (o === doorPivot.object3D) { doorPivot.components.hinge.toggle(); return; }
+        if (o === winPivot.object3D)  { winPivot.components.hinge.toggle();  return; }
+        o = o.parent;
+      }
+    }
+
+    function setupInteraction() {
+      const canvas = sceneEl.canvas;
+      if (!canvas) { setTimeout(setupInteraction, 200); return; }
+      canvas.style.touchAction = 'none';
+      let dragging = false, lastX = 0, startX = 0, startY = 0;
+      canvas.addEventListener('pointerdown', (e) => {
+        dragging = true; lastX = e.clientX; startX = e.clientX; startY = e.clientY;
+      });
+      canvas.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        const dx = e.clientX - lastX; lastX = e.clientX;
+        house.object3D.rotation.y += dx * 0.01; // girar arrastando
+      });
+      const end = (e) => {
+        if (!dragging) return;
+        dragging = false;
+        const dist = Math.hypot(e.clientX - startX, e.clientY - startY);
+        if (dist < 8) toggleAtPoint(e.clientX, e.clientY, canvas); // toque curto = abrir/fechar
+      };
+      canvas.addEventListener('pointerup', end);
+      canvas.addEventListener('pointercancel', () => { dragging = false; });
+    }
+    if (sceneEl.hasLoaded) setupInteraction();
+    else sceneEl.addEventListener('loaded', setupInteraction);
 
     // Wireframe
     let wire = false;
