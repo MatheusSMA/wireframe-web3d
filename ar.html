@@ -177,16 +177,18 @@
     document.getElementById('btn-marker').addEventListener('click', () => panel.classList.add('show'));
     document.getElementById('btn-marker-close').addEventListener('click', () => panel.classList.remove('show'));
 
-    // Tela cheia: dentro de iframe abre em aba própria (modo fullscreen confiável no mobile);
-    // fora de iframe usa a Fullscreen API.
-    const inIframe = window.self !== window.top;
+    // Tela cheia NO LUGAR (mantém o contexto embedded que funciona dentro do iframe).
+    // Não abre aba nova — abrir a ar.html solta é justamente o modo que quebra no celular.
+    // Funciona no Android; no iOS o navegador ignora (e a câmera segue funcionando na caixa).
+    const fsEl = document.documentElement;
     document.getElementById('btn-full').addEventListener('click', () => {
-      if (inIframe) { window.open(location.href, '_blank', 'noopener'); return; }
-      const el = document.documentElement;
-      if (!document.fullscreenElement) {
-        (el.requestFullscreen || el.webkitRequestFullscreen || function(){}).call(el);
-      } else if (document.exitFullscreen) {
-        document.exitFullscreen();
+      const isFs = document.fullscreenElement || document.webkitFullscreenElement;
+      if (!isFs) {
+        const req = fsEl.requestFullscreen || fsEl.webkitRequestFullscreen;
+        if (req) req.call(fsEl);
+      } else {
+        const exit = document.exitFullscreen || document.webkitExitFullscreen;
+        if (exit) exit.call(document);
       }
     });
 
