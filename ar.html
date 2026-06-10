@@ -12,7 +12,7 @@
   <style>
     /* IMPORTANTE: não estilizar #arjs-video / .a-canvas — o AR.js cuida do tamanho do vídeo.
        Mexer nisso quebra o preenchimento da câmera. */
-    html, body { margin: 0; padding: 0; overflow: hidden; height: 100%;
+    html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; touch-action: none;
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
     .a-enter-vr, .a-enter-ar { display: none !important; }
 
@@ -45,34 +45,37 @@
     #controls button.primary { background: #2563eb; color: #fff; }
     #controls button.exit { background: rgba(15,23,42,0.8); color: #fff; }
 
-    /* Painel do marcador (responsivo) */
-    #marker-panel {
-      position: fixed; inset: 0; z-index: 30;
-      background: rgba(15, 23, 42, 0.94);
-      display: none; flex-direction: column; align-items: center; justify-content: center;
-      gap: 14px; padding: clamp(16px, 5vw, 28px); text-align: center; color: #fff;
+    /* Botão ativo */
+    #controls button.active { background: #2563eb; color: #fff; }
+
+    /* Opções laterais (Porta / Janela) — aparecem ao ativar "Controles" */
+    #side-controls { display: none; }
+    #side-controls.show { display: block; }
+    .side-btn {
+      position: fixed; top: 50%; transform: translateY(-50%);
+      z-index: 21; border: 0; border-radius: 14px;
+      padding: 16px 12px; font-size: clamp(12px, 3vw, 16px); font-weight: 800;
+      line-height: 1.25; text-align: center;
+      background: rgba(37, 99, 235, 0.95); color: #fff; cursor: pointer;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
     }
-    #marker-panel.show { display: flex; }
-    #marker-panel img { width: clamp(120px, 45%, 220px); background: #fff; padding: 12px; border-radius: 12px; }
-    #marker-panel p { max-width: 42ch; line-height: 1.5; margin: 0; font-size: clamp(12px, 3.4vw, 15px); }
-    #marker-panel .close { background: #2563eb; border: 0; border-radius: 10px; padding: 11px 18px; font-weight: 700; cursor: pointer; color: #fff; }
+    #side-door { left: 10px; }
+    #side-window { right: 10px; }
   </style>
 </head>
 <body>
   <div id="hint">📷 Aponte para o marcador <strong>Hiro</strong> · arraste para girar · toque na porta/janela.</div>
 
   <div id="controls">
-    <button id="btn-wire">🔲 Wireframe</button>
-    <button id="btn-marker">🎯 Alvo</button>
+    <button id="btn-actions">🎛️ Controles</button>
     <button id="btn-full">⛶ Tela cheia</button>
     <button id="btn-exit" class="exit">✕ Sair</button>
   </div>
 
-  <div id="marker-panel">
-    <p>Aponte a câmera para este marcador (imprima ou mostre em outra tela):</p>
-    <img src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/data/images/hiro.png" alt="Marcador Hiro" />
-    <p style="font-size:13px;opacity:.8">Marcador padrão “Hiro” do AR.js.</p>
-    <button class="close" id="btn-marker-close">Entendi</button>
+  <!-- Opções laterais (aparecem ao ativar "Controles") -->
+  <div id="side-controls">
+    <button class="side-btn" id="side-door">🚪<br>Porta</button>
+    <button class="side-btn" id="side-window">🪟<br>Janela</button>
   </div>
 
   <!-- Componente que abre/fecha porta e janela com easing (gira pela dobradiça) -->
@@ -154,6 +157,7 @@
     const ndc = new THREE.Vector2();
 
     function toggleAtPoint(clientX, clientY, canvas) {
+      if (!sceneEl.camera) return;
       const rect = canvas.getBoundingClientRect();
       ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
       ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
@@ -168,46 +172,39 @@
       }
     }
 
-    function setupInteraction() {
-      const canvas = sceneEl.canvas;
-      if (!canvas) { setTimeout(setupInteraction, 200); return; }
-      canvas.style.touchAction = 'none';
-      let dragging = false, lastX = 0, startX = 0, startY = 0;
-      canvas.addEventListener('pointerdown', (e) => {
-        dragging = true; lastX = e.clientX; startX = e.clientX; startY = e.clientY;
-      });
-      canvas.addEventListener('pointermove', (e) => {
-        if (!dragging) return;
-        const dx = e.clientX - lastX; lastX = e.clientX;
-        house.object3D.rotation.y += dx * 0.01; // girar arrastando
-      });
-      const end = (e) => {
-        if (!dragging) return;
-        dragging = false;
-        const dist = Math.hypot(e.clientX - startX, e.clientY - startY);
-        if (dist < 8) toggleAtPoint(e.clientX, e.clientY, canvas); // toque curto = abrir/fechar
-      };
-      canvas.addEventListener('pointerup', end);
-      canvas.addEventListener('pointercancel', () => { dragging = false; });
-    }
-    if (sceneEl.hasLoaded) setupInteraction();
-    else sceneEl.addEventListener('loaded', setupInteraction);
+    // Ignora gestos que começam nos botões da UI
+    function isUI(t) { return t && t.closest && t.closest('#controls, #side-controls'); }
 
-    // Wireframe
-    let wire = false;
-    document.getElementById('btn-wire').addEventListener('click', () => {
-      wire = !wire;
-      house.object3D.traverse(o => {
-        if (o.isMesh && o.material) {
-          (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { m.wireframe = wire; });
-        }
-      });
+    // Eventos na janela (mais confiável que prender no canvas do AR.js):
+    // arrastar = girar a casa; toque curto na porta/janela = abrir/fechar.
+    let down = false, dragging = false, startX = 0, startY = 0, lastX = 0;
+    window.addEventListener('pointerdown', (e) => {
+      if (isUI(e.target)) return;
+      down = true; dragging = false; startX = e.clientX; startY = e.clientY; lastX = e.clientX;
     });
+    window.addEventListener('pointermove', (e) => {
+      if (!down) return;
+      const dx = e.clientX - lastX; lastX = e.clientX;
+      if (Math.abs(e.clientX - startX) + Math.abs(e.clientY - startY) > 6) dragging = true;
+      if (dragging) house.object3D.rotation.y += dx * 0.01; // girar arrastando
+    });
+    window.addEventListener('pointerup', (e) => {
+      if (!down) return; down = false;
+      if (isUI(e.target)) return;
+      const dist = Math.hypot(e.clientX - startX, e.clientY - startY);
+      if (dist < 8 && sceneEl.canvas) toggleAtPoint(e.clientX, e.clientY, sceneEl.canvas);
+    });
+    window.addEventListener('pointercancel', () => { down = false; });
 
-    // Painel do marcador
-    const panel = document.getElementById('marker-panel');
-    document.getElementById('btn-marker').addEventListener('click', () => panel.classList.add('show'));
-    document.getElementById('btn-marker-close').addEventListener('click', () => panel.classList.remove('show'));
+    // Botão "Controles": mostra/esconde as opções laterais Porta e Janela
+    const sideControls = document.getElementById('side-controls');
+    const btnActions = document.getElementById('btn-actions');
+    btnActions.addEventListener('click', () => {
+      const show = sideControls.classList.toggle('show');
+      btnActions.classList.toggle('active', show);
+    });
+    document.getElementById('side-door').addEventListener('click', () => doorPivot.components.hinge.toggle());
+    document.getElementById('side-window').addEventListener('click', () => winPivot.components.hinge.toggle());
 
     // Tela cheia NO LUGAR (mantém o contexto embedded que funciona dentro do iframe).
     // Não abre aba nova — abrir a ar.html solta é justamente o modo que quebra no celular.
