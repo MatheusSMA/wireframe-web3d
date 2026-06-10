@@ -40,10 +40,16 @@ solto. Cole isto no editor de conteúdo (no modo HTML):
   width="100%" height="480"
   style="border:0; max-width:720px; border-radius:12px;"
   loading="lazy"
+  allow="camera; gyroscope; accelerometer; magnetometer; xr-spatial-tracking; fullscreen"
+  allowfullscreen
   title="Casa 3D interativa"></iframe>
 ```
 
 Ajuste `height` e `max-width` como preferir.
+
+> 📷 O atributo `allow="camera; ..."` é **obrigatório** para o botão **"Ver em AR"** funcionar
+> dentro do iframe — sem ele o navegador bloqueia o acesso à câmera. O AR também exige **HTTPS**
+> (o GitHub Pages já é).
 
 ---
 

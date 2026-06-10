@@ -113,6 +113,19 @@
     .house3d-toggle input:checked + .house3d-track { background: #2563eb; }
     .house3d-toggle input:checked + .house3d-track::after { transform: translateX(16px); }
     .house3d-toggle input:focus-visible + .house3d-track { outline: 2px solid #2563eb; outline-offset: 2px; }
+    .house3d-ar-btn {
+      margin-top: 2px;
+      display: block;
+      text-align: center;
+      text-decoration: none;
+      background: #2563eb;
+      color: #fff;
+      font-weight: 700;
+      font-size: 13px;
+      padding: 8px 12px;
+      border-radius: 9px;
+    }
+    .house3d-ar-btn:hover { background: #1d4ed8; }
   </style>
 </head>
 <body>
@@ -128,6 +141,7 @@
         <span class="house3d-track"></span>
         <span>Girar sozinho</span>
       </label>
+      <a class="house3d-ar-btn" href="ar.html">📷 Ver em AR</a>
     </div>
     <div class="house3d-hint" id="house3d-hint">
       Arraste para girar · clique na porta e na janela
