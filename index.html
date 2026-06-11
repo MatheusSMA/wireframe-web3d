@@ -141,12 +141,17 @@
         <span class="house3d-track"></span>
         <span>Girar sozinho</span>
       </label>
-      <a class="house3d-ar-btn" href="ar.html?v=7">📷 Ver em AR</a>
+      <button class="house3d-ar-btn" id="btn-ar">📷 Ver em AR</button>
     </div>
     <div class="house3d-hint" id="house3d-hint">
       Arraste para girar · clique na porta e na janela
     </div>
   </div>
+
+  <!-- model-viewer escondido: o botão "Ver em AR" dispara o AR direto neste elemento -->
+  <model-viewer id="ar-mv" alt="Casa 3D"
+    ar ar-modes="scene-viewer quick-look" ar-placement="floor" ar-scale="auto"
+    style="position:fixed; right:0; bottom:0; width:1px; height:1px; opacity:0; pointer-events:none; border:0;"></model-viewer>
 
   <!-- Three.js via CDN (versão fixada) — sem build necessário -->
   <script type="importmap">
@@ -158,9 +163,14 @@
   }
   </script>
 
+  <!-- model-viewer: usado só pra disparar o AR nativo (Scene Viewer / Quick Look) -->
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
+
   <script type="module">
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+    import { USDZExporter } from 'three/addons/exporters/USDZExporter.js';
 
     const root = document.getElementById('house3d-root');
     const hint = document.getElementById('house3d-hint');
@@ -450,6 +460,53 @@
     controls.autoRotateSpeed = 1.5;
     autoRotateToggle.addEventListener('change', () => {
       controls.autoRotate = autoRotateToggle.checked;
+    });
+
+    // ---------- "Ver em AR": abre DIRETO no visualizador nativo (Scene Viewer / Quick Look) ----------
+    const arMv = document.getElementById('ar-mv');
+    const btnAr = document.getElementById('btn-ar');
+
+    function matE(color, extra) {
+      return new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 0.8 }, extra || {}));
+    }
+    // Casa estática (porta/janela fechadas), base em y=0 pra assentar no chão
+    function buildHouseForExport() {
+      const g = new THREE.Group();
+      const W = 2.6, H = 1.7, D = 2.4, frontZ = D / 2;
+      const body = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), matE(0xf2e9da, { roughness: 0.85 })); body.position.y = H / 2; g.add(body);
+      const roofH = 1.15, roofR = 1.72; const roof = new THREE.Mesh(new THREE.ConeGeometry(roofR, roofH, 4), matE(0xb14b3c, { roughness: 0.7 })); roof.rotation.y = Math.PI / 4; roof.position.y = H + roofH / 2; g.add(roof);
+      const dFrame = new THREE.Mesh(new THREE.BoxGeometry(0.74, 1.13, 0.04), matE(0x4d3420, { roughness: 0.7 })); dFrame.position.set(-0.55, 0.565, frontZ + 0.005); g.add(dFrame);
+      const door = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.05, 0.06), matE(0x6b4a2b, { roughness: 0.6 })); door.position.set(-0.55, 0.525, frontZ + 0.03); g.add(door);
+      const knob = new THREE.Mesh(new THREE.SphereGeometry(0.045, 16, 16), matE(0xe6c14b, { metalness: 0.6, roughness: 0.3 })); knob.position.set(-0.34, 0.525, frontZ + 0.06); g.add(knob);
+      const wFrame = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.74, 0.05), matE(0x4d3420, { roughness: 0.7 })); wFrame.position.set(0.62, 0.97, frontZ + 0.005); g.add(wFrame);
+      const glass = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.62, 0.05), matE(0x9fd3e3, { roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.6 })); glass.position.set(0.62, 0.97, frontZ + 0.03); g.add(glass);
+      const barV = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.62, 0.07), matE(0xece4d6)); barV.position.set(0.62, 0.97, frontZ + 0.035); g.add(barV);
+      const barH = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.05, 0.07), matE(0xece4d6)); barH.position.set(0.62, 0.97, frontZ + 0.035); g.add(barH);
+      return g;
+    }
+
+    // Gera GLB (Android) e USDZ (iPhone) já no carregamento, pra estarem prontos no clique
+    (async function prepareAR() {
+      try {
+        const expScene = new THREE.Scene();
+        expScene.add(buildHouseForExport());
+        const glb = await new Promise((res, rej) => new GLTFExporter().parse(expScene, res, rej, { binary: true }));
+        arMv.src = URL.createObjectURL(new Blob([glb], { type: 'model/gltf-binary' }));
+        try {
+          const usdz = await new USDZExporter().parse(expScene);
+          arMv.setAttribute('ios-src', URL.createObjectURL(new Blob([usdz], { type: 'model/vnd.usdz+zip' })));
+        } catch (e) { /* iOS gera USDZ do GLB se faltar */ }
+      } catch (e) { /* se falhar, o botão cai no fallback abaixo */ }
+    })();
+
+    btnAr.addEventListener('click', () => {
+      // Mesmo gesto do toque -> abre o AR nativo na hora (sem tela intermediária)
+      if (arMv && arMv.canActivateAR) {
+        arMv.activateAR();
+      } else {
+        // Desktop / sem suporte a AR: abre a visualização do modelo
+        window.location.href = 'ar.html?v=8';
+      }
     });
 
     // ---------- Resize responsivo ----------
