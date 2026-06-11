@@ -8,16 +8,6 @@
   <!-- model-viewer (AR cross-plataforma: Scene Viewer no Android, Quick Look no iPhone) -->
   <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
 
-  <!-- three.js só pra gerar o modelo (GLB/USDZ) em runtime -->
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-    }
-  }
-  </script>
-
   <style>
     html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #eef2f7;
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
@@ -88,6 +78,7 @@
   <model-viewer
     id="mv"
     alt="Casa 3D"
+    src="house.glb" ios-src="house.usdz"
     camera-controls
     touch-action="pan-y"
     shadow-intensity="1"
@@ -119,69 +110,8 @@
   </div>
 
   <script type="module">
-    import * as THREE from 'three';
-    import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
-    import { USDZExporter } from 'three/addons/exporters/USDZExporter.js';
-
     const mv = document.getElementById('mv');
     const status = document.getElementById('status');
-
-    function mat(color, extra) {
-      return new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 0.8 }, extra || {}));
-    }
-
-    // Casa com base em y=0 (assenta no chão no AR)
-    function buildHouse() {
-      const g = new THREE.Group();
-      const W = 2.6, H = 1.7, D = 2.4, frontZ = D / 2;
-
-      const body = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), mat(0xf2e9da, { roughness: 0.85 }));
-      body.position.y = H / 2; g.add(body);
-
-      const roofH = 1.15, roofR = 1.72;
-      const roof = new THREE.Mesh(new THREE.ConeGeometry(roofR, roofH, 4), mat(0xb14b3c, { roughness: 0.7 }));
-      roof.rotation.y = Math.PI / 4; roof.position.y = H + roofH / 2; g.add(roof);
-
-      const dFrame = new THREE.Mesh(new THREE.BoxGeometry(0.74, 1.13, 0.04), mat(0x4d3420, { roughness: 0.7 }));
-      dFrame.position.set(-0.55, 0.565, frontZ + 0.005); g.add(dFrame);
-      const door = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.05, 0.06), mat(0x6b4a2b, { roughness: 0.6 }));
-      door.position.set(-0.55, 0.525, frontZ + 0.03); g.add(door);
-      const knob = new THREE.Mesh(new THREE.SphereGeometry(0.045, 16, 16), mat(0xe6c14b, { metalness: 0.6, roughness: 0.3 }));
-      knob.position.set(-0.34, 0.525, frontZ + 0.06); g.add(knob);
-
-      const wFrame = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.74, 0.05), mat(0x4d3420, { roughness: 0.7 }));
-      wFrame.position.set(0.62, 0.97, frontZ + 0.005); g.add(wFrame);
-      const glass = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.62, 0.05),
-        mat(0x9fd3e3, { roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.6 }));
-      glass.position.set(0.62, 0.97, frontZ + 0.03); g.add(glass);
-      const barV = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.62, 0.07), mat(0xece4d6));
-      barV.position.set(0.62, 0.97, frontZ + 0.035); g.add(barV);
-      const barH = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.05, 0.07), mat(0xece4d6));
-      barH.position.set(0.62, 0.97, frontZ + 0.035); g.add(barH);
-
-      return g;
-    }
-
-    // Gera GLB (Android/inline) e USDZ (iPhone) em runtime e alimenta o model-viewer
-    (async function init() {
-      try {
-        const scene = new THREE.Scene();
-        scene.add(buildHouse());
-
-        const glb = await new Promise((res, rej) =>
-          new GLTFExporter().parse(scene, res, rej, { binary: true }));
-        const glbUrl = URL.createObjectURL(new Blob([glb], { type: 'model/gltf-binary' }));
-        mv.src = glbUrl;
-
-        try {
-          const usdz = await new USDZExporter().parse(scene);
-          const usdzUrl = URL.createObjectURL(new Blob([usdz], { type: 'model/vnd.usdz+zip' }));
-          mv.setAttribute('ios-src', usdzUrl);
-        } catch (e) { /* iOS usa USDZ auto-gerado se faltar */ }
-      } catch (e) {
-        status.textContent = 'Erro ao gerar o modelo: ' + e;
-      }
-    })();
 
     mv.addEventListener('load', () => {
       status.textContent = 'Arraste para girar · toque na porta/janela · “Ver no meu espaço” para AR';
