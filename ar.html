@@ -24,15 +24,23 @@
     model-viewer { width: 100%; height: 100%; background: linear-gradient(160deg, #dbeafe, #f8fafc); }
 
     /* Botões de canto */
-    .corner { position: fixed; z-index: 20; display: flex; gap: 8px; }
+    .corner { position: fixed; z-index: 30; display: flex; gap: 8px; }
     .corner.tl { top: 10px; left: 10px; }
     .corner.tr { top: 10px; right: 10px; }
-    .corner button, .ar-btn {
+    .corner button {
       border: 0; border-radius: 999px; cursor: pointer; font-weight: 700;
       font-size: clamp(12px, 3vw, 14px); padding: 9px 14px;
       background: rgba(255,255,255,0.92); color: #0f172a; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
-    .ar-btn { background: #2563eb; color: #fff; }
+
+    /* Botão de AR: grande e centralizado embaixo */
+    .ar-btn {
+      position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+      z-index: 30; border: 0; border-radius: 999px; cursor: pointer; font-weight: 800;
+      font-size: clamp(14px, 3.6vw, 17px); padding: 14px 22px;
+      background: #2563eb; color: #fff; box-shadow: 0 6px 18px rgba(37,99,235,0.5);
+      white-space: nowrap;
+    }
 
     /* Hotspots clicáveis na porta/janela */
     .hotspot {
@@ -50,16 +58,17 @@
       font-size: clamp(11px, 3vw, 14px); max-width: 92%; text-align: center;
     }
 
-    /* Popup de conteúdo */
+    /* Popup de conteúdo (z-index máximo pra ficar acima do model-viewer dentro do iframe) */
     #info-popup {
-      position: fixed; inset: 0; z-index: 40; display: none;
-      align-items: center; justify-content: center; padding: clamp(14px, 5vw, 28px);
-      background: rgba(15, 23, 42, 0.6);
+      position: fixed; inset: 0; z-index: 2147483647; display: none;
+      align-items: center; justify-content: center; padding: clamp(12px, 4vw, 28px);
+      background: rgba(15, 23, 42, 0.82);
     }
     #info-popup.show { display: flex; }
     .info-card {
-      background: #fff; color: #0f172a; border-radius: 16px; width: min(420px, 92%);
-      padding: clamp(16px, 4vw, 22px); box-shadow: 0 12px 40px rgba(0,0,0,0.35); text-align: center;
+      background: #fff; color: #0f172a; border-radius: 16px; width: min(420px, 94%);
+      max-height: 92%; overflow: auto;
+      padding: clamp(14px, 4vw, 22px); box-shadow: 0 12px 40px rgba(0,0,0,0.35); text-align: center;
     }
     .info-img {
       width: 100%; height: clamp(130px, 28vh, 200px); background: #eef2f7; border-radius: 12px;
@@ -72,7 +81,7 @@
   </style>
 </head>
 <body>
-  <div class="corner tl">
+  <div class="corner tr">
     <button id="btn-exit">✕ Sair</button>
   </div>
 
@@ -84,6 +93,7 @@
     shadow-intensity="1"
     ar
     ar-modes="webxr scene-viewer quick-look"
+    ar-placement="floor"
     ar-scale="auto"
     auto-rotate
     interaction-prompt="none">
